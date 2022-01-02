@@ -4,6 +4,8 @@ import (
 	"bufio"
 	_ "embed"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -19,27 +21,117 @@ var ModelFragmentSource string
 var ModelVertexSource string
 
 type Model struct {
-	vao, vbo, vboNormal uint32
-	numpoints           uint32
-	program             uint32
-	scale               float32
+	vao, vbo        uint32
+	shaderMaterials []mgl32.Vec3
+	numtris         int32
+	program         uint32
+
+	mod *ACModel
 }
+type modelPointInfo struct {
+	vert     mgl32.Vec3
+	normal   mgl32.Vec3
+	matIndex uint32
+}
+
+const modelPointInfoSize = 7
 
 func MakeModel(fname string) *Model {
 	m := Model{}
-	m.scale = 1
 	var err error
-	m.vao, m.vbo, m.vboNormal, m.numpoints, err = MakeModelFromFile(fname)
-	if err != nil {
-		panic(fmt.Errorf("error loading plane model %s. %v", fname, err))
-	}
+	f, err := os.Open(fname)
+	check(err)
+	bytes, err := io.ReadAll(f)
+	check(err)
+	m.mod, err = ParseACFile(string(bytes))
+	check(err)
+
+	m.shaderMaterials, m.vao, m.vbo, m.numtris = m.mod.ACModelToBuffers()
+	log.Println("Making Model")
+	//log.Printf("%+v\n", m)
 
 	m.program, err = BuildProgram(ModelFragmentSource, ModelVertexSource)
 	if err != nil {
-		panic(fmt.Errorf("error Building model shader: %v", err))
+		panic(fmt.Errorf("error building model shader: %v", err))
 	}
+	posAttrib := uint32(gl.GetAttribLocation(m.program, gl.Str("vert\x00")))
+	gl.EnableVertexAttribArray(posAttrib)
+	gl.VertexAttribPointerWithOffset(posAttrib, 3, gl.FLOAT, false, modelPointInfoSize*4, 0)
+
+	normAttrib := uint32(gl.GetAttribLocation(m.program, gl.Str("normal\x00")))
+	gl.EnableVertexAttribArray(normAttrib)
+	gl.VertexAttribPointerWithOffset(normAttrib, 3, gl.FLOAT, false, modelPointInfoSize*4, 3*4)
+
+	matAttrib := uint32(gl.GetAttribLocation(m.program, gl.Str("material_index\x00")))
+	gl.EnableVertexAttribArray(matAttrib)
+	gl.VertexAttribIPointerWithOffset(matAttrib, 1, gl.UNSIGNED_INT, modelPointInfoSize*4, 6*4)
+	log.Printf("pasAttrib %v, norm Attrib %v\n", posAttrib, normAttrib)
+
 	return &m
 }
+
+func (m *ACModel) ACModelToBuffers() ([]mgl32.Vec3, uint32, uint32, int32) {
+	points := []modelPointInfo{}
+	mesh := m.obj.kids[0].mesh
+	fmt.Println("Making mesh name", m.obj.kids[0].name)
+	for _, f := range mesh.faces {
+		//Split face into triangles
+		root := f.vertIndices[0]
+		for i := 1; i < len(f.vertIndices)-1; i++ {
+			tri := [3]int{root, f.vertIndices[i], f.vertIndices[i+1]}
+			a := mesh.verts[tri[0]]
+			b := mesh.verts[tri[1]]
+			c := mesh.verts[tri[2]]
+			norm := CalculateSurfaceNormal(a, b, c)
+			p1 := modelPointInfo{a, norm, uint32(f.matIndex)}
+			p2 := modelPointInfo{b, norm, uint32(f.matIndex)}
+			p3 := modelPointInfo{c, norm, uint32(f.matIndex)}
+
+			points = append(points, p1)
+			points = append(points, p2)
+			points = append(points, p3)
+		}
+
+	}
+	log.Println(points)
+
+	var vao, vbo uint32
+	gl.GenBuffers(1, &vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+	gl.BufferData(gl.ARRAY_BUFFER, modelPointInfoSize*4*len(points), gl.Ptr(points), gl.STATIC_DRAW)
+
+	gl.GenVertexArrays(1, &vao)
+	gl.BindVertexArray(vao)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+
+	colors := make([]mgl32.Vec3, len(m.materials))
+	for i := range m.materials {
+		colors[i] = m.materials[i].rgb
+	}
+
+	return colors, vao, vbo, int32(len(points))
+}
+
+func CalculateSurfaceNormal(a, b, c mgl32.Vec3) mgl32.Vec3 {
+
+	//Set Vector U to (Triangle.p2 minus Triangle.p1)
+	//Set Vector V to (Triangle.p3 minus Triangle.p1)
+	U := b.Sub(a)
+	V := c.Sub(a)
+
+	N := mgl32.Vec3{}
+	//N = U.Cross(V)
+	N[0] = U.Y()*V.Z() - U.Z()*V.Y()
+	N[1] = U.Z()*V.X() - U.X()*V.Z()
+	N[2] = U.X()*V.Y() - U.Y()*V.X()
+	//Set Normal.x to (multiply U.y by V.z) minus (multiply U.z by V.y)
+	//Set Normal.y to (multiply U.z by V.x) minus (multiply U.x by V.z)
+	//Set Normal.z to (multiply U.x by V.y) minus (multiply U.y by V.x)
+	//
+	//Returning Normal
+	return N.Normalize()
+}
+
 func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orientation mgl32.Vec3) {
 	gl.UseProgram(m.program)
 	modelMatrixName := "modelMatrix"
@@ -51,7 +143,6 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	model := mgl32.Ident4()
 
 	model = mgl32.Translate3D(position[0], position[1], position[2])
-	model = model.Mul4(mgl32.Scale3D(m.scale, m.scale, m.scale))
 
 	// Set the modelUniform for the object
 	modelUniform := gl.GetUniformLocation(m.program, gl.Str(modelMatrixName+"\x00"))
@@ -70,13 +161,17 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	MVPUniform := gl.GetUniformLocation(m.program, gl.Str(mvpMatrixName+"\x00"))
 	gl.UniformMatrix4fv(MVPUniform, 1, false, &MVP[0])
 
+	matUniform := gl.GetUniformLocation(m.program, gl.Str("MaterialColors\x00"))
+	gl.Uniform3fv(matUniform, int32(len(m.shaderMaterials)), &m.shaderMaterials[0][0])
+
+	gl.Disable(gl.CULL_FACE)
 	gl.BindVertexArray(m.vao)
 	gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
-	gl.DrawArrays(gl.TRIANGLES, 0, int32(m.numpoints/3))
-
+	gl.DrawArrays(gl.TRIANGLES, 0, m.numtris)
+	gl.Enable(gl.CULL_FACE)
 }
 
-func MakeModelFromFile(filename string) (uint32, uint32, uint32, uint32, error) {
+func MakeModelFromObjFile(filename string) (uint32, uint32, uint32, uint32, error) {
 
 	model, err := readOBJ(filename)
 	if err != nil {

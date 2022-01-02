@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -51,21 +52,26 @@ func LoadACFile(fname string) (*ACModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := ParseACFile(string(src))
-	fmt.Printf("%+v\n", m)
+	m, err := ParseACFile(string(src))
+	if err != nil {
+		return nil, err
+	}
 	return m, err
 }
 
-func ParseACFile(src string) *ACModel {
+func ParseACFile(src string) (*ACModel, error) {
 	m := ACModel{}
 	m.materials = []ACMat{}
 	src = strings.ReplaceAll(src, "\r", "")
 	lines := strings.Split(src, "\n")
 
 	header := lines[0]
+	if header[0:4] != "AC3D" {
+		return nil, fmt.Errorf("incorrect AC3D header")
+	}
 
 	m.version = HexChartoInt(header[4])
-	fmt.Println("ver", m.version)
+	//log.Println("ver", m.version)
 	for i := 1; i < len(lines); i++ {
 		line := lines[i]
 		parts := strings.Split(line, " ")
@@ -79,15 +85,14 @@ func ParseACFile(src string) *ACModel {
 			mat.name = strings.ReplaceAll(mat.name, "\"", "")
 			m.materials = append(m.materials, mat)
 		case "OBJECT":
-			fmt.Println("Top level object", lines[i], lines[i+1])
 
 			var nextLineDelta int
 			m.obj, nextLineDelta = ParseACObject(lines[i:])
 			i += nextLineDelta
-			fmt.Println("===========THIS SHOULD BE THE END OF IT===========")
+			//log.Println("===========THIS SHOULD BE THE END OF IT===========")
 		}
 	}
-	return &m
+	return &m, nil
 }
 
 //Parses OBJECT...kids and turns it into an ACObj
@@ -99,56 +104,50 @@ func ParseACObject(lines []string) (ACObj, int) {
 		tokeni := strings.Split(lines[i], " ")[0]
 		switch tokeni {
 		case "OBJECT":
-			fmt.Println("\tThis Object", lines[i], lines[i+1])
 			child, nextLineDelta := ParseACObject(lines[i:])
 			o.kids = append(o.kids, child)
 			i += nextLineDelta
 			//parsed all kids
 			if len(o.kids) == o.numkids {
-				fmt.Println("Parsed", o.numkids, "kids")
 				return o, i
 			}
 
 		case "name":
 			fmt.Sscanf(lines[i], "name %s", &o.name)
-			fmt.Println("Naming object", o.name)
+			//log.Println("Naming object", o.name)
 		case "loc":
 			fmt.Sscanf(lines[i], "loc %f %f %f", &o.loc[0], &o.loc[1], &o.loc[2])
-			fmt.Println("Getting location", o.loc, "for", o.name)
+			//log.Println("Getting location", o.loc, "for", o.name)
 		case "numvert":
 			//Start Mesh Parsing
 			numverts := 0
 			fmt.Sscanf(lines[i], "numvert %d", &numverts)
 			o.mesh.verts = ParseMeshVerts(lines[i:i+numverts+1], numverts)
-			fmt.Println("Finished parsing verts for", o.name)
+			//log.Println("Finished parsing verts for", o.name)
 			i += numverts //Skip over vertices
 		case "numsurf":
 			faces, nextLineDelta := ParseMeshSurfaces(lines[i:])
 			o.mesh.faces = faces
 			i += nextLineDelta - 1
-			fmt.Println("parsed surfaces of ", o.name)
-			//fmt.Println("not next line", lines[i])
+			//log.Println("parsed surfaces of ", o.name)
 
-			if i < len(lines)-1 {
-				fmt.Println("next line", lines[i+1])
-			}
 		case "kids":
 			fmt.Sscanf(lines[i], "kids %d", &o.numkids)
-			fmt.Println("Ending Object", o.name)
+			//log.Println("Ending Object", o.name)
 			if o.numkids == 0 {
-				fmt.Println("No Kids")
+				//log.Println("No Kids")
 				return o, i
 			}
 			//Multiple kids
 
 			//not all kids have been parsed, keep parsing
-			fmt.Println("Hit Kids")
+			//log.Println("Hit Kids")
 
 		default:
-			fmt.Println("Omitting line: ", lines[i])
+			log.Println("Omitting line: ", lines[i])
 		}
 	}
-	fmt.Println("***********Last Object**********", o.name)
+	//log.Println("***********Last Object**********", o.name)
 	return o, len(lines)
 }
 
@@ -188,7 +187,7 @@ func ParseMeshSurfaces(lines []string) ([]ACFace, int) {
 		}
 
 	}
-	fmt.Println("Should never get here face version")
+	log.Println("Should never get here face version")
 	return faces, len(lines)
 }
 func ParseMeshVerts(lines []string, numverts int) []mgl32.Vec3 {
