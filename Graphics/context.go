@@ -34,6 +34,7 @@ func InitGraphicsContext(EnvPath string, camFOV float32) *GraphicsContext {
 		FOV:      camFOV,
 	}
 	gc.UpdateRenderTargets()
+	LoadACFile("Assets/Planes/allegro.ac")
 
 	gc.Env = LoadEnv(EnvPath)
 	gc.Scene = MakeScenery()
