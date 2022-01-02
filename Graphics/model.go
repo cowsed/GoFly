@@ -21,10 +21,16 @@ var ModelFragmentSource string
 var ModelVertexSource string
 
 type Model struct {
-	vao, vbo        uint32
+	program  uint32
+	vao, vbo uint32
+
 	shaderMaterials []mgl32.Vec3
+	partMatrices    []mgl32.Mat4
 	numtris         int32
-	program         uint32
+
+	//To be used when texturing models is supported
+	//texImage        image.RGBA
+	//textureHandle   uint32
 
 	mod *ACModel
 }
@@ -32,9 +38,11 @@ type modelPointInfo struct {
 	vert     mgl32.Vec3
 	normal   mgl32.Vec3
 	matIndex uint32
+	objID    uint32
 }
 
-const modelPointInfoSize = 7
+const modelPointInfoSize = 8
+const maxObjParts = 20 //length of array in shader
 
 func MakeModel(fname string) *Model {
 	m := Model{}
@@ -46,9 +54,8 @@ func MakeModel(fname string) *Model {
 	m.mod, err = ParseACFile(string(bytes))
 	check(err)
 
-	m.shaderMaterials, m.vao, m.vbo, m.numtris = m.mod.ACModelToBuffers()
+	m.partMatrices, m.shaderMaterials, m.vao, m.vbo, m.numtris = m.mod.ACModelToBuffers()
 	log.Println("Making Model")
-	//log.Printf("%+v\n", m)
 
 	m.program, err = BuildProgram(ModelFragmentSource, ModelVertexSource)
 	if err != nil {
@@ -65,33 +72,47 @@ func MakeModel(fname string) *Model {
 	matAttrib := uint32(gl.GetAttribLocation(m.program, gl.Str("material_index\x00")))
 	gl.EnableVertexAttribArray(matAttrib)
 	gl.VertexAttribIPointerWithOffset(matAttrib, 1, gl.UNSIGNED_INT, modelPointInfoSize*4, 6*4)
+
+	idAttrib := uint32(gl.GetAttribLocation(m.program, gl.Str("objID\x00")))
+	gl.EnableVertexAttribArray(idAttrib)
+	gl.VertexAttribIPointerWithOffset(idAttrib, 1, gl.UNSIGNED_INT, modelPointInfoSize*4, 7*4)
+
 	log.Printf("pasAttrib %v, norm Attrib %v\n", posAttrib, normAttrib)
 
 	return &m
 }
 
-func (m *ACModel) ACModelToBuffers() ([]mgl32.Vec3, uint32, uint32, int32) {
+func (m *ACModel) ACModelToBuffers() ([]mgl32.Mat4, []mgl32.Vec3, uint32, uint32, int32) {
 	points := []modelPointInfo{}
-	mesh := m.obj.kids[0].mesh
-	fmt.Println("Making mesh name", m.obj.kids[0].name)
-	for _, f := range mesh.faces {
-		//Split face into triangles
-		root := f.vertIndices[0]
-		for i := 1; i < len(f.vertIndices)-1; i++ {
-			tri := [3]int{root, f.vertIndices[i], f.vertIndices[i+1]}
-			a := mesh.verts[tri[0]]
-			b := mesh.verts[tri[1]]
-			c := mesh.verts[tri[2]]
-			norm := CalculateSurfaceNormal(a, b, c)
-			p1 := modelPointInfo{a, norm, uint32(f.matIndex)}
-			p2 := modelPointInfo{b, norm, uint32(f.matIndex)}
-			p3 := modelPointInfo{c, norm, uint32(f.matIndex)}
-
-			points = append(points, p1)
-			points = append(points, p2)
-			points = append(points, p3)
+	partMatrices := make([]mgl32.Mat4, m.obj.numkids)
+	for j := range m.obj.kids {
+		if j > maxObjParts {
+			panic("too Many parts of a plane, this should only ever happen as a developer")
 		}
+		mesh := m.obj.kids[j].mesh
+		loc := m.obj.kids[j].loc
+		partMatrices[j] = mgl32.Translate3D(loc[0], loc[1], loc[2])
+		fmt.Println("Making mesh name", m.obj.kids[j].name)
 
+		for _, f := range mesh.faces {
+			//Split face into triangles
+			root := f.vertIndices[0]
+			for i := 1; i < len(f.vertIndices)-1; i++ {
+				tri := [3]int{root, f.vertIndices[i], f.vertIndices[i+1]}
+				a := mesh.verts[tri[0]]
+				b := mesh.verts[tri[1]]
+				c := mesh.verts[tri[2]]
+				norm := CalculateSurfaceNormal(a, b, c)
+				p1 := modelPointInfo{a, norm, uint32(f.matIndex), uint32(j)}
+				p2 := modelPointInfo{b, norm, uint32(f.matIndex), uint32(j)}
+				p3 := modelPointInfo{c, norm, uint32(f.matIndex), uint32(j)}
+
+				points = append(points, p1)
+				points = append(points, p2)
+				points = append(points, p3)
+			}
+
+		}
 	}
 	log.Println(points)
 
@@ -109,27 +130,7 @@ func (m *ACModel) ACModelToBuffers() ([]mgl32.Vec3, uint32, uint32, int32) {
 		colors[i] = m.materials[i].rgb
 	}
 
-	return colors, vao, vbo, int32(len(points))
-}
-
-func CalculateSurfaceNormal(a, b, c mgl32.Vec3) mgl32.Vec3 {
-
-	//Set Vector U to (Triangle.p2 minus Triangle.p1)
-	//Set Vector V to (Triangle.p3 minus Triangle.p1)
-	U := b.Sub(a)
-	V := c.Sub(a)
-
-	N := mgl32.Vec3{}
-	//N = U.Cross(V)
-	N[0] = U.Y()*V.Z() - U.Z()*V.Y()
-	N[1] = U.Z()*V.X() - U.X()*V.Z()
-	N[2] = U.X()*V.Y() - U.Y()*V.X()
-	//Set Normal.x to (multiply U.y by V.z) minus (multiply U.z by V.y)
-	//Set Normal.y to (multiply U.z by V.x) minus (multiply U.x by V.z)
-	//Set Normal.z to (multiply U.x by V.y) minus (multiply U.y by V.x)
-	//
-	//Returning Normal
-	return N.Normalize()
+	return partMatrices, colors, vao, vbo, int32(len(points))
 }
 
 func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orientation mgl32.Vec3) {
@@ -138,11 +139,13 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	viewMatrixName := "viewMatrix"
 	projMatrixName := "projMatrix"
 	mvpMatrixName := "MVP"
+	partMatricesName := "partMatricies"
 
 	// Set up model martix for shader
 	model := mgl32.Ident4()
 
 	model = mgl32.Translate3D(position[0], position[1], position[2])
+	//model = model.Mul4(mgl32.Scale3D(0.3048, 0.3048, 0.3048)) //maybe to convert to metersnot feet
 
 	// Set the modelUniform for the object
 	modelUniform := gl.GetUniformLocation(m.program, gl.Str(modelMatrixName+"\x00"))
@@ -163,6 +166,9 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 
 	matUniform := gl.GetUniformLocation(m.program, gl.Str("MaterialColors\x00"))
 	gl.Uniform3fv(matUniform, int32(len(m.shaderMaterials)), &m.shaderMaterials[0][0])
+
+	partMsUniform := gl.GetUniformLocation(m.program, gl.Str(partMatricesName+"\x00"))
+	gl.UniformMatrix4fv(partMsUniform, int32(len(m.partMatrices)), false, &m.partMatrices[0][0])
 
 	gl.Disable(gl.CULL_FACE)
 	gl.BindVertexArray(m.vao)
@@ -205,6 +211,18 @@ func MakeModelFromObjFile(filename string) (uint32, uint32, uint32, uint32, erro
 	return vao, vbo, normalbuffer, uint32(numpoints), nil
 }
 
+func CalculateSurfaceNormal(a, b, c mgl32.Vec3) mgl32.Vec3 {
+	U := b.Sub(a)
+	V := c.Sub(a)
+
+	N := mgl32.Vec3{}
+	N[0] = U.Y()*V.Z() - U.Z()*V.Y()
+	N[1] = U.Z()*V.X() - U.X()*V.Z()
+	N[2] = U.X()*V.Y() - U.Y()*V.X()
+	return N.Normalize()
+}
+
+//OBJ things
 type faceIndex struct {
 	f1 []int32 // [v1, uv1, n1]
 	f2 []int32 // [v2, uv2, n2]
