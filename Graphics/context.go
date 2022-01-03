@@ -29,7 +29,7 @@ func InitGraphicsContext(EnvPath string, camFOV float32) *GraphicsContext {
 	gc.RenderWidth = 1000
 	gc.RenderHeight = 800
 	gc.Cam = Camera{
-		Position: [3]float32{0, 1.6, 5},
+		Position: [3]float32{0, .1, 1},
 		Lookat:   [3]float32{0, 0, 0},
 		FOV:      camFOV,
 	}

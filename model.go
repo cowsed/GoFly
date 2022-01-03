@@ -4,6 +4,7 @@ import (
 	graphics "github.com/cowsed/GoFly/Graphics"
 	physics "github.com/cowsed/GoFly/Physics"
 	"github.com/go-gl/mathgl/mgl32"
+	"github.com/go-gl/mathgl/mgl64"
 )
 
 type Model struct {
@@ -18,7 +19,7 @@ func LoadModel(fname string) *Model {
 		Position:    [3]float64{0, 10, 0}, //m
 		Velocity:    [3]float64{0, 0, 0},  //m/s
 		Mass:        10,                   //kg
-		Orientation: [3]float64{},
+		Orientation: mgl64.Quat{},
 	}
 	return &Model{
 		physObj: physObj,
@@ -26,9 +27,16 @@ func LoadModel(fname string) *Model {
 	}
 }
 
+func Quat64toQuat32(q mgl64.Quat) mgl32.Quat {
+	return mgl32.Quat{
+		W: float32(q.W),
+		V: V64toV32(q.V),
+	}
+}
+
 func (m *Model) DrawModel(projection, view mgl32.Mat4) {
 	position := V64toV32(m.physObj.Position)
-	orientation := V64toV32(m.physObj.Orientation)
+	orientation := Quat64toQuat32(m.physObj.Orientation)
 	//position = [3]float32{0, 0, 0}
 	m.model3d.DrawModel(projection, view, position, orientation)
 

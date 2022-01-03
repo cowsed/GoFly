@@ -27,7 +27,9 @@ func (s *Sim) DoPhysics(paused bool) {
 }
 
 func (s *Sim) Draw() {
-	//s.gfxContext.Cam.Lookat = V64toV32(s.mod.physObj.Position)
+	if followModel {
+		s.gfxContext.Cam.Lookat = V64toV32(s.mod.physObj.Position)
+	}
 	s.gfxContext.BeginDraw(V64toV32(s.mod.physObj.Position))
 
 	s.mod.DrawModel(s.gfxContext.Projection, s.gfxContext.View)

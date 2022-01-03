@@ -25,7 +25,7 @@ void main() {
     vec3 col;
     col = vec3(1,1,1)*mask;
 
-    float shadow = clamp(distance(objectPosition,GroundPlaneScale*fragVert)-.2,0,1);
+    float shadow = clamp(distance(objectPosition,GroundPlaneScale*fragVert)-.4,0,1);
     shadow*=.8;
     shadow+=.2;
     col*=shadow;

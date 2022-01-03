@@ -13,6 +13,7 @@ var Simulation *Sim
 var frame = 0
 var Paused = true
 var fullWindow = false
+var followModel = false
 
 func refresh() {
 	ticker := time.NewTicker(time.Millisecond * 16)

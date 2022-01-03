@@ -133,7 +133,7 @@ func (m *ACModel) ACModelToBuffers() ([]mgl32.Mat4, []mgl32.Vec3, uint32, uint32
 	return partMatrices, colors, vao, vbo, int32(len(points))
 }
 
-func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orientation mgl32.Vec3) {
+func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orientation mgl32.Quat) {
 	gl.UseProgram(m.program)
 	modelMatrixName := "modelMatrix"
 	viewMatrixName := "viewMatrix"
@@ -145,8 +145,8 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	model := mgl32.Ident4()
 
 	model = mgl32.Translate3D(position[0], position[1], position[2])
+	model = model.Mul4(orientation.Mat4())
 	//model = model.Mul4(mgl32.Scale3D(0.3048, 0.3048, 0.3048)) //maybe to convert to metersnot feet
-
 	// Set the modelUniform for the object
 	modelUniform := gl.GetUniformLocation(m.program, gl.Str(modelMatrixName+"\x00"))
 	gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])

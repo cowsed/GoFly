@@ -2,26 +2,41 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	g "github.com/AllenDang/giu"
 	"github.com/AllenDang/imgui-go"
+	"github.com/go-gl/mathgl/mgl64"
 )
 
+var lastFrameTime = time.Now()
+
 func MakeUI() {
+	dt := float64(time.Since(lastFrameTime).Microseconds()) / 1000
+	lastFrameTime = time.Now()
+
 	controls := g.Layout{
+		g.Labelf("FPS: %.2f", (1000 / dt)),
 		g.Checkbox("Paused", &Paused),
+		g.Checkbox("Follow", &followModel),
+
 		g.InputFloat(&Simulation.gfxContext.Scene.Scale).Label("Scale"),
 		g.Labelf("sumDT: %v", Simulation.physContext.SumDT),
 		g.Custom(func() {
+
 			DragFloat3("Camera Position", (*[3]float32)(&Simulation.gfxContext.Cam.Position), 0.01, -1000, 1000, "%f")
 			DragFloat3("Lookat Position", (*[3]float32)(&Simulation.gfxContext.Cam.Lookat), 0.01, -1000, 1000, "%f")
 			DragFloat364("Object Position", (*[3]float64)(&Simulation.physContext.Model.Position), 0.01, -1000, 1000, "%f")
 			DragFloat364("Object Velocity", (*[3]float64)(&Simulation.physContext.Model.Velocity), 0.01, -1000, 1000, "%f")
+			DragFloat364("Rotational Velocity", (*[3]float64)(&Simulation.physContext.Model.RotationalVelocity), 0.01, -1000, 1000, "%f")
+			DragQuat64("Orientation", &Simulation.mod.physObj.Orientation, 0.01, -1, 1, "%f")
+			imgui.Text(fmt.Sprint(Simulation.physContext.Model.Orientation))
+
 			if imgui.Button("reset physics") {
 				Simulation.physContext.ResetPhysics()
 			}
+			imgui.DragFloatV("FOV", &Simulation.gfxContext.Cam.FOV, 0.1, .5, 179, "%f", 0)
 		}),
-		g.InputFloat(&Simulation.gfxContext.Cam.FOV).Label("Field of view"),
 	}
 	render := g.Custom(func() {
 		size := imgui.ContentRegionAvail()
@@ -108,5 +123,33 @@ func DragFloat364(label string, vec64 *[3]float64, speed float32, min, max float
 	imgui.SameLine()
 	imgui.Text(label)
 	*vec64 = V32toV64(vec)
+	return value_changed
+}
+
+func DragQuat64(label string, vec64 *mgl64.Quat, speed float32, min, max float32, format string) bool {
+	q := Quat64toQuat32(*vec64)
+	vec := [4]float32{q.W, q.V.X(), q.V.Y(), q.V.Z()}
+
+	value_changed := false
+	size := imgui.CalcItemWidth() / float32(len(vec)+1)
+	for i := range vec {
+		imgui.PushItemWidth(size)
+		id := fmt.Sprintf("%s-%d\n", label, i)
+		imgui.PushID(id)
+		if i > 0 {
+			imgui.SameLine()
+		}
+		changed := imgui.DragFloatV("", &vec[i], speed, min, max, format, 0)
+		value_changed = value_changed || changed
+		imgui.PopID()
+		imgui.PopItemWidth()
+	}
+
+	imgui.SameLine()
+	imgui.Text(label)
+	*vec64 = mgl64.Quat{
+		W: float64(vec[0]),
+		V: [3]float64{float64(vec[1]), float64(vec[2]), float64(vec[3])},
+	}
 	return value_changed
 }
