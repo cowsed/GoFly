@@ -6,6 +6,7 @@ import (
 
 	g "github.com/AllenDang/giu"
 	"github.com/AllenDang/imgui-go"
+	physics "github.com/cowsed/GoFly/Physics"
 	"github.com/go-gl/mathgl/mgl64"
 )
 
@@ -17,19 +18,28 @@ func MakeUI() {
 
 	controls := g.Layout{
 		g.Labelf("FPS: %.2f", (1000 / dt)),
+		g.Labelf("Contacting: %v", Simulation.physContext.Model.Contacting),
 		g.Checkbox("Paused", &Paused),
 		g.Checkbox("Follow", &followModel),
 
 		g.InputFloat(&Simulation.gfxContext.Scene.Scale).Label("Scale"),
 		g.Labelf("sumDT: %v", Simulation.physContext.SumDT),
 		g.Custom(func() {
+			mass32 := float32(Simulation.physContext.Model.Mass)
+			if imgui.DragFloat("Mass", &mass32) {
+				Simulation.physContext.Model.Mass = float64(mass32)
+			}
 
 			DragFloat3("Camera Position", (*[3]float32)(&Simulation.gfxContext.Cam.Position), 0.01, -1000, 1000, "%f")
 			DragFloat3("Lookat Position", (*[3]float32)(&Simulation.gfxContext.Cam.Lookat), 0.01, -1000, 1000, "%f")
 			DragFloat364("Object Position", (*[3]float64)(&Simulation.physContext.Model.Position), 0.01, -1000, 1000, "%f")
-			DragFloat364("Object Velocity", (*[3]float64)(&Simulation.physContext.Model.Velocity), 0.01, -1000, 1000, "%f")
-			DragFloat364("Rotational Velocity", (*[3]float64)(&Simulation.physContext.Model.RotationalVelocity), 0.01, -1000, 1000, "%f")
-			DragQuat64("Orientation", &Simulation.mod.physObj.Orientation, 0.01, -1, 1, "%f")
+			DragFloat364("Object Momentum", (*[3]float64)(&Simulation.physContext.Model.Momentum), 0.01, -1000, 1000, "%f")
+			imgui.Separator()
+			//DragFloat364("Applied Force", (*[3]float64)(&physics.AppliedForce), 0.01, -1000, 1000, "%f")
+			DragFloat364("Applied Torque", (*[3]float64)(&physics.AppliedTorque), 0.01, -1000, 1000, "%f")
+
+			//DragFloat364("Rotational Velocity", (*[3]float64)(&Simulation.physContext.Model.RotationalVelocity), 0.01, -1000, 1000, "%f")
+			DragQuat64("Orientation", &Simulation.mod.physObj.Orientation, 0.01, -1, 1, true, "%f")
 			imgui.Text(fmt.Sprint(Simulation.physContext.Model.Orientation))
 
 			if imgui.Button("reset physics") {
@@ -126,7 +136,7 @@ func DragFloat364(label string, vec64 *[3]float64, speed float32, min, max float
 	return value_changed
 }
 
-func DragQuat64(label string, vec64 *mgl64.Quat, speed float32, min, max float32, format string) bool {
+func DragQuat64(label string, vec64 *mgl64.Quat, speed float32, min, max float32, normalize bool, format string) bool {
 	q := Quat64toQuat32(*vec64)
 	vec := [4]float32{q.W, q.V.X(), q.V.Y(), q.V.Z()}
 
@@ -147,9 +157,13 @@ func DragQuat64(label string, vec64 *mgl64.Quat, speed float32, min, max float32
 
 	imgui.SameLine()
 	imgui.Text(label)
-	*vec64 = mgl64.Quat{
+	newQ := mgl64.Quat{
 		W: float64(vec[0]),
 		V: [3]float64{float64(vec[1]), float64(vec[2]), float64(vec[3])},
 	}
+	if value_changed && normalize {
+		newQ = newQ.Normalize()
+	}
+	*vec64 = newQ
 	return value_changed
 }

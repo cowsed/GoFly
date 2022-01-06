@@ -13,7 +13,7 @@ float make_grid(vec2 pos){
     float y1 = mod(pos.y,1.0);
     float yMask=step(y1,.5);
  
-    return (xMask==0)^^(yMask==0)?1.0:.5;
+    return (xMask==0)^^(yMask==0)?1.0:.1;
 }
 
 

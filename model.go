@@ -17,8 +17,8 @@ func LoadModel(fname string) *Model {
 
 	physObj := &physics.PhysicsObject{
 		Position:    [3]float64{0, 10, 0}, //m
-		Velocity:    [3]float64{0, 0, 0},  //m/s
-		Mass:        10,                   //kg
+		Momentum:    [3]float64{0, 0, 0},  //m/s
+		Mass:        1,                    //kg
 		Orientation: mgl64.Quat{},
 	}
 	return &Model{
