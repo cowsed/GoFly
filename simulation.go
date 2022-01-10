@@ -2,22 +2,23 @@ package main
 
 import (
 	graphics "github.com/cowsed/GoFly/Graphics"
-	physics "github.com/cowsed/GoFly/Physics"
+	plane_physics "github.com/cowsed/GoFly/Physics"
 )
 
 type Sim struct {
 	mod         *Model
 	gfxContext  *graphics.GraphicsContext
-	physContext *physics.PhysicsSim
+	physContext *plane_physics.PhysicsSim
 }
 
 func NewSim() *Sim {
 	s := Sim{}
 	//s.mod = LoadModel("Assets/Models/Simple/final NP v17.obj")
-	s.mod = LoadModel(Settings.ModelPath)
 
 	s.gfxContext = graphics.InitGraphicsContext(Settings.EnvironmentPath, Settings.CameraFOV)
-	s.physContext = physics.InitPhysicsContext(s.mod.physObj)
+	s.physContext = plane_physics.InitPhysicsContext()
+
+	s.mod = LoadModel(Settings.ModelPath, s.physContext.Model)
 
 	return &s
 }

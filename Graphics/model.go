@@ -142,9 +142,8 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	partMatricesName := "partMatricies"
 
 	// Set up model martix for shader
-	model := mgl32.Ident4()
+	model := mgl32.Translate3D(position[0], position[1], position[2])
 
-	model = mgl32.Translate3D(position[0], position[1], position[2])
 	model = model.Mul4(orientation.Mat4())
 	//model = model.Mul4(mgl32.Scale3D(0.3048, 0.3048, 0.3048)) //maybe to convert to metersnot feet
 	// Set the modelUniform for the object

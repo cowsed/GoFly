@@ -1,9 +1,6 @@
-package physics
+package plane_physics
 
 import (
-	"fmt"
-	"log"
-	"math"
 	"time"
 
 	"github.com/go-gl/mathgl/mgl64"
@@ -11,214 +8,202 @@ import (
 
 const g float64 = -9.81 //m/s^2
 
-var AppliedTorque mgl64.Vec3
-var AppliedForce mgl64.Vec3
-
 type PhysicsSim struct {
-	PhysicsStep   int
 	SumDT         float64
-	LastFrameTime time.Time
+	PhysicsFrames int
 	Model         *PhysicsObject
-	Setting       CollisionObject
+	Gravity       mgl64.Vec3
+	//Setting     *bulletphysics.PhysicsObject
 }
 
-func InitPhysicsContext(mod *PhysicsObject) *PhysicsSim {
+func InitPhysicsContext() *PhysicsSim {
 	p := PhysicsSim{}
-	p.Model = mod
-	p.PhysicsStep = 100
-	return &p
-}
-func (ps *PhysicsSim) ResetPhysics() {
-	log.Println("Resetting physics")
+	p.PhysicsFrames = 100
+	p.Gravity = mgl64.Vec3{0, g, 0}
 
-	ps.Model.Position = [3]float64{0, .5, 0}
-	ps.Model.Momentum = [3]float64{0, 0, 0}
-	ps.Model.Inertia = ps.Model.Mass * 1.0 / 6.0
-	ps.Model.hardPoints = []mgl64.Vec3{
-		//Bottom 4
-		{-.5, -.5, -.5}, {-.5, -.5, .5}, {.5, -.5, -.5}, {.5, -.5, .5},
-		//Top 4
-		{-.5, .5, -.5}, {-.5, .5, .5}, {.5, .5, -.5}, {.5, .5, .5},
+	m := PhysicsObject{
+		Position:    [3]float64{0, 1, 0},
+		Momentum:    [3]float64{0, 0, 0},
+		Orientation: mgl64.Quat{},
+		Mass:        0,
+		contactPoints: []mgl64.Vec3{
+			//Bottom 4
+			{-.5, -.5, -.5}, {-.5, -.5, .5}, {.5, -.5, -.5}, {.5, -.5, .5},
+			//Top 4
+			{-.5, .5, -.5}, {-.5, .5, .5}, {.5, .5, -.5}, {.5, .5, .5},
+		},
 	}
 
-	//Plane Hardpoints
-	//ps.Model.hardPoints = []mgl64.Vec3{{0, 0, 0}, {-0.0405, -0.49993, 0}, {-2.91, -0.075, 0}}
-	ps.SumDT = 0
-	ps.LastFrameTime = time.Now()
+	s := 1.0
+	it := mgl64.Mat3{
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1}.Mul(m.Mass * (s * s) / 6)
 
-	ps.Model.Orientation = mgl64.QuatLookAtV(mgl64.Vec3{0, 0, 0}, mgl64.Vec3{0, 0, -1}, mgl64.Vec3{0, 1, 0})
+	m.InertiaTensor = it
 
+	p.Model = &m
+
+	p.ResetPhysics()
+	return &p
+}
+
+func (ps *PhysicsSim) ResetPhysics() {
+	ps.Model.Mass = 1
+	ps.Model.Momentum = mgl64.Vec3{}
+	ps.Model.Position = mgl64.Vec3{0, 1, 0}
+	ps.Model.Orientation = mgl64.QuatRotate(0, mgl64.Vec3{0, 1, 0})
+	ps.Model.AngularMomentum = mgl64.Vec3{}
+
+	s := 1.0
+	it := mgl64.Mat3{
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1}.Mul(ps.Model.Mass * (s * s) / 6)
+
+	ps.Model.InertiaTensor = it
 }
 
 func (ps *PhysicsSim) DoPhysics(paused bool) {
-	Delta := time.Since(ps.LastFrameTime)
-	ps.LastFrameTime = time.Now()
 	if paused {
 		return
 	}
 
-	dt := Delta.Seconds() //seconds
+	frameTime := (16 * time.Millisecond).Seconds() //verbosity good
+	ps.SumDT += frameTime
 
-	for i := 0; i < ps.PhysicsStep; i++ {
-		ps.SumDT += dt / float64(ps.PhysicsStep)
+	dt := frameTime / float64(ps.PhysicsFrames)
+	for i := 0; i < ps.PhysicsFrames; i++ {
+		forces := ps.Gravity
 
-		ps.Model.DoPhysics(ps.SumDT, dt/float64(ps.PhysicsStep))
+		ps.Model.IntegrateLinear(dt, forces)
+		ps.Model.IntegrateRotational(dt, mgl64.Vec3{})
+
+		collisions := ps.DetectCollisions()
+		if len(collisions) == 0 {
+			continue
+		}
+		//If multiple collisions are happening(flat plane on flat plane) collisions can just happen at their center
+		reaction := CollisionResponse{}
+		reaction.CollisionNormal = collisions[0].CollisionNormal
+		for _, r := range collisions {
+			reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Add(r.CollisionBodyPosition)
+		}
+
+		reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Mul(1.0 / float64(4))
+		//Do the actual math
+		coeff_restitution := .7
+
+		//Something off with the position of intersection
+		//try bouncing at origin vs try bouncing at x=1
+
+		e := coeff_restitution
+		v := ps.Model.GetVelocityAtPoint(reaction.CollisionBodyPosition) //ps.Model.Momentum.Mul(1 / ps.Model.Mass)
+		n := reaction.CollisionNormal
+		r := reaction.CollisionBodyPosition //.Sub(ps.Model.Position)
+		inv_mass := 1 / ps.Model.Mass
+		inv_it := ps.Model.InertiaTensor.Inv()
+
+		numerator := (v.Mul(-(1 + e))).Dot(n)
+		denom := (inv_it.Mul3x1(r.Cross(n))).Cross(r).Dot(n) + inv_mass
+
+		j := numerator / denom
+		//reaction.CollisionNormal[1] = -1
+		//inv_it := ps.Model.InertiaTensor.Inv()
+		//inv_mass := 1 / ps.Model.Mass
+		//e := coeff_restitution
+		//n := reaction.CollisionNormal
+		//
+		//vAtPoint := ps.Model.GetVelocityAtPoint(reaction.CollisionBodyPosition)
+		//vn := reaction.CollisionBodyPosition.Dot(vAtPoint) //minF(0, reaction.CollisionBodyPosition.Dot(vAtPoint))
+		//r := reaction.CollisionBodyPosition.Sub(ps.Model.Position)
+		//
+		//k := inv_mass + r.Cross(n).Dot((inv_it.Mul3x1(r.Cross(n))))
+		//
+		//j := -(1 + e) * vn / k
+		//fmt.Println(j, vn, k)
+
+		dP := n.Mul(j)
+		ps.Model.Momentum = ps.Model.Momentum.Add(dP)
+		ps.Model.Position = ps.Model.Position.Add(dP.Mul(dt / ps.Model.Mass))
+
+		//ps.Model.AngularMomentum = ps.Model.AngularMomentum.Add(r.Cross(n.Mul(j)))
+
+		ps.Model.IntegrateRotational(dt, r.Cross(n.Mul(j)).Mul(1/dt))
+
 	}
+}
+func minF(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
 
+func transformVector(mat mgl64.Mat3, v mgl64.Vec3) mgl64.Vec3 {
+	return mat.Mul3x1(v)
+}
+
+type CollisionResponse struct {
+	CollisionNormal       mgl64.Vec3
+	CollisionBodyPosition mgl64.Vec3
+}
+
+func (ps *PhysicsSim) DetectCollisions() []CollisionResponse {
+	reactions := []CollisionResponse{}
+	for i := range ps.Model.contactPoints {
+		world_space := ps.Model.ModelSpaceToWorldSpace(ps.Model.contactPoints[i], ps.Model.Position)
+		if world_space[1] < 0 {
+			reactions = append(reactions, CollisionResponse{
+				CollisionNormal:       [3]float64{0, 1, 0},
+				CollisionBodyPosition: ps.Model.contactPoints[i],
+			})
+		}
+	}
+	return reactions
 }
 
 type PhysicsObject struct {
-	//Primary
 	Position mgl64.Vec3
 	Momentum mgl64.Vec3
 
-	//Primary
 	Orientation     mgl64.Quat
 	AngularMomentum mgl64.Vec3
 
-	//Constant
-	Mass    float64
-	Inertia float64
+	Mass          float64
+	InertiaTensor mgl64.Mat3
 
-	hardPoints []mgl64.Vec3 //Translations off the origin
-	Contacting bool
+	contactPoints []mgl64.Vec3
 }
 
-func (p *PhysicsObject) ModelSpaceToWorldSpace(offset mgl64.Vec3, centerPosition mgl64.Vec3) mgl64.Vec3 {
-	point := offset                                                                                     //Offset in body space
-	rotated := p.Orientation.Mat4().Mul4x1(mgl64.Vec4{point[0], point[1], point[2], 1})                 //Offset in rotated body space
-	moved := mgl64.Translate3D(centerPosition[0], centerPosition[1], centerPosition[2]).Mul4x1(rotated) //Position of point in world space
+func (p *PhysicsObject) GetVelocityAtPoint(point mgl64.Vec3) mgl64.Vec3 {
+	inverseInertiaTensor := p.InertiaTensor.Inv()
+	angularVelocity := transformVector(inverseInertiaTensor, p.AngularMomentum)
 
-	return moved.Vec3()
-}
-func (p *PhysicsObject) FindCollisions(centerPosition mgl64.Vec3) ([]int, []mgl64.Vec3) { //List of indices to hardpoints array
-	hits := []int{}
-	pos := []mgl64.Vec3{}
-	for i, offset := range p.hardPoints {
-		moved := p.ModelSpaceToWorldSpace(offset, centerPosition)
-		if moved[1] <= 0 {
-			hits = append(hits, i)
-			pos = append(pos, moved)
-		}
-	}
-
-	return hits, pos
+	linearVel := p.Momentum.Mul(1 / p.Mass)
+	vel := linearVel.Add(angularVelocity.Cross(point.Sub(p.Position)))
+	return vel
 }
 
-/*
-func (p *PhysicsObject) HandleCollisions(dt float64, nextMomentum, nextPosition mgl64.Vec3) mgl64.Vec3 {
-	contactForce := mgl64.Vec3{}
-	contactOffset := mgl64.Vec3{}
-	p.Contacting = false
-	for _, offset := range p.hardPoints {
-		point := offset                                                                         //Offset in body space
-		rotated := p.Orientation.Mat4().Mul4x1(mgl64.Vec4{point[0], point[1], point[2], 1})     //Offset in rotated body space
-		moved := mgl64.Translate3D(p.Position[0], p.Position[1], p.Position[2]).Mul4x1(rotated) //Position of point in world space
-		if moved[1] <= 0 {
-			p.Contacting = true
-			impulseY := 0.0
-			//impulse
-			//J = integral of F dt
-			//J = Favg * t
-			//Favg = J/t
-			//J = delta P = change in momentum
-			//-v to +v for collision with ground
-			//J = delta P = mv2-mv1 = m(v2-v1) = m dv
-			velocity := p.Momentum.Mul(1 / p.Mass)
-			KEBefore := .5 * p.Mass * velocity[1] * velocity[1]
-			PEBefore := math.Abs(p.Mass * g * p.Position[1])
-			fmt.Printf("Initial:\nKE: %v\nPE: %v\nME: %v\n", KEBefore, PEBefore, KEBefore+PEBefore)
-			vy := velocity[1]
-			dv := -2. * vy //oppisite direction of velocity * 2 to fully reverse
-			impulseY = dv * p.Mass
-			forceY := impulseY / dt
-			contactForce[1] = forceY
-			contactOffset[1] = -(moved[1])
-			break //Only handle one force at a time for now
+//void GetVelocityAtWorldPoint( const vec3f & point, vec3f & velocity ) const
+//{
+//	vec3f angularVelocity = transformVector( inverseInertiaTensorWorld, angularMomentum );
+//	velocity = linearVelocity + cross( angularVelocity, point - position );
+//}
+//
 
-		}
+func (p *PhysicsObject) IntegrateLinear(dt float64, forces mgl64.Vec3) {
+	//V_{n+1} = V_n + A*dt
+	//A = F/m
+	//P = Vm
+	//P_{n+1} = P_{n} + m*A*dt
+	//P_{n+1} = P_{n} + m*F/m*dt
+	//P_{n+1} = P_{n} + F*dt
 
-	}
-	return contactForce
+	p.Momentum = p.Momentum.Add(forces.Mul(dt))
+	p.Position = p.Position.Add(p.Momentum.Mul(1 / p.Mass).Mul(dt))
 }
-*/
-func (p *PhysicsObject) IntegrateLinear(dt float64, force mgl64.Vec3) (mgl64.Vec3, mgl64.Vec3, mgl64.Vec3) {
-	//Translational Motion Derivation
-	//F=Ma
-	//a=F/M
-	//Vf = Vi + a*dt
-	//Xf = Xi + v*dt
-	//P=MV
-	//P=Pi+MA*dt
-	//P=Pi+M(F/M)*dt // Ms cancel out
-	//P=Pi+F*dt
-
-	Momentum := p.Momentum.Add(force.Mul(dt))
-	Velocity := Momentum.Mul(1 / p.Mass)
-	Position := p.Position.Add(Velocity.Mul(dt))
-
-	return Momentum, Velocity, Position
-}
-func (p *PhysicsObject) DoPhysics(t, dt float64) {
-	gravitationalForce := mgl64.Vec3{0, g * p.Mass, 0}
-
-	force := gravitationalForce                                   //Force in the absense of collisions
-	NextMomentum, _, NextPosition := p.IntegrateLinear(dt, force) //Find momentum, position if no collisions
-
-	hits, positions := p.FindCollisions(NextPosition)
-	if len(hits) != 0 {
-		fmt.Println(hits, positions)
-	}
-	partialMass := p.Mass / float64(len(hits))
-
-	reactionTorques := make([]mgl64.Vec3, len(hits))
-	var reactionForce mgl64.Vec3
-	if len(hits) > 0 {
-		for i := range hits {
-			Vinitial := p.Momentum.Mul(1 / p.Mass)[1]
-			MEBefore := .5*p.Mass*Vinitial*Vinitial + p.Mass*p.Position[1]*math.Abs(g)
-
-			p.Position[1] = .5
-			PEAfter := (p.Position[1] * math.Abs(g) * p.Mass)
-			KEAfter := MEBefore - PEAfter
-			if KEAfter < 0 {
-				KEAfter = 0
-			}
-			Vafter := math.Sqrt(2*KEAfter/p.Mass) * .95
-
-			//Impulse = F * t = Ns = Kg * m / s   =  m * dv
-			//F*dt = m * dv
-			//F= m*dv/dt
-			dv := Vafter - Vinitial
-			m := partialMass
-			F := m * dv / dt
-			reactionForce[1] += F
-			//p.Momentum = NextMomentum
-			//p.Momentum[1] = Vafter * p.Mass
-			reactionTorques[i][1] = F
-		}
-		p.Momentum, _, p.Position = p.IntegrateLinear(dt, force.Add(reactionForce))
-
-	} else {
-		p.Momentum = NextMomentum
-		p.Position = NextPosition
-	}
-	//rfmt.Println(reactionTorques)
-	//ontactForce := p.HandleCollisions(dt, NextMomentum, NextPosition) //Check if there would be a collision
-
-	//force = force.Add(contactForce) //Add the contact forces in
-
-	//Integrate for real with new forces
-	//p.Momentum, _, p.Position = p.IntegrateLinear(dt, force)
-
-	//if p.Contacting {
-	//	KEAfter := .5 * p.Mass * Velocity[1] * Velocity[1]
-	//	PEAfter := math.Abs(p.Mass * p.Position[1] * g)
-	//	fmt.Printf("Final:\nKE: %v\nPE: %v\nME: %v\n", KEAfter, PEAfter, KEAfter+PEAfter)
-	//
-	//}
-	//
-
+func (p *PhysicsObject) IntegrateRotational(dt float64, torques mgl64.Vec3) {
 	//Rotational
 	//torque := AppliedTorque //mgl64.Vec3{.1, 0, 0}
 	//T=I alpha
@@ -231,33 +216,37 @@ func (p *PhysicsObject) DoPhysics(t, dt float64) {
 	//change in P is I * T/I * dt   //Is cancel out
 	//P = Pi + T * dt
 
-	//p.AngularMomentum = p.AngularMomentum.Add(torque.Mul(dt))
-	//angularVel := p.AngularMomentum.Mul(1 / p.Inertia)
-	//p.Orientation = p.Orientation.Normalize()
-	//
-	////// spin = 0.5 *w* *q*
-	//q := mgl64.Quat{
-	//	W: 0,
-	//	V: [3]float64{angularVel[0], angularVel[1], angularVel[2]},
-	//}
-	//spin := q.Mul(p.Orientation).Scale(.5)
+	p.AngularMomentum = p.AngularMomentum.Add(torques.Mul(dt))
 
-	//Rotational
-	//p.Orientation = p.Orientation.Normalize()
+	inverseInertiaTensor := p.InertiaTensor.Inv()
+	angularVel := inverseInertiaTensor.Mul3x1(p.AngularMomentum)
+	p.Orientation = p.Orientation.Normalize()
 
-	//t=I alpha
-	//Torque := mgl64.Vec3{0, 0, 0}
-	//RotationalVelocity := Torque.Mul(1 / p.RotationInertia)
-	//
-
-	//spin := q.Mul(w).Scale(.5)
-	//p.Orientation = p.Orientation.Add(spin.Scale(dt)).Normalize()
+	//// spin = 0.5 *w* *q*
+	q := mgl64.Quat{
+		W: 0,
+		V: [3]float64{angularVel[0], angularVel[1], angularVel[2]},
+	}
+	spin := q.Mul(p.Orientation).Scale(.5)
+	p.Orientation = p.Orientation.Add(spin.Scale(dt)).Normalize()
 
 }
 
-//v := p.Orientation.Rotate(mgl64.Vec3{0, 0, 1})
-//ang := -math.Atan2(v.Y(), v.Z())
-//p.Orientation = mgl64.QuatRotate(ang-0.01, mgl64.Vec3{1, 0, 0}.Normalize())
+func (p *PhysicsObject) ModelSpaceToWorldSpace(ObjectSpace mgl64.Vec3, centerPosition mgl64.Vec3) mgl64.Vec3 {
+	point := ObjectSpace                                                                                //Offset in body space
+	rotated := p.Orientation.Mat4().Mul4x1(mgl64.Vec4{point[0], point[1], point[2], 1})                 //Offset in rotated body space
+	moved := mgl64.Translate3D(centerPosition[0], centerPosition[1], centerPosition[2]).Mul4x1(rotated) //Position of point in world space
+	return moved.Vec3()
+}
 
-type CollisionObject struct {
+func ExtractPosition(m mgl64.Mat4) mgl64.Vec3 {
+
+	//scalingFactor := math.Sqrt(m.At(0, 0)*m.At(0, 0) + m.At(0, 1)*m.At(0, 1) + m.At(0, 2)*m.At(0, 2))
+
+	translation := mgl64.Vec3{
+		m.At(0, 3),
+		m.At(1, 3),
+		m.At(2, 3),
+	}
+	return translation
 }

@@ -22,7 +22,7 @@ flat out uint fragMatIndex;
 void main() {
     //fragTexCoord = vertTexCoord;
     fragMatIndex = material_index;
-    fragNormal = normal;//normalize(normal);
+    fragNormal = (modelMatrix*vec4(normal,1)).xyz;//normalize(normal);
     
     mat4 myTrans = partMatricies[objID];
     vec3 ActualVert = (myTrans * vec4(vert,1)).xyz;

@@ -12,15 +12,9 @@ type Model struct {
 	model3d *graphics.Model
 }
 
-func LoadModel(fname string) *Model {
+func LoadModel(fname string, physObj *physics.PhysicsObject) *Model {
 	gfxMod := graphics.MakeModel(fname)
 
-	physObj := &physics.PhysicsObject{
-		Position:    [3]float64{0, 10, 0}, //m
-		Momentum:    [3]float64{0, 0, 0},  //m/s
-		Mass:        1,                    //kg
-		Orientation: mgl64.Quat{},
-	}
 	return &Model{
 		physObj: physObj,
 		model3d: gfxMod,
@@ -40,6 +34,28 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4) {
 	//position = [3]float32{0, 0, 0}
 	m.model3d.DrawModel(projection, view, position, orientation)
 
+}
+
+func M64toM32(m mgl64.Mat4) mgl32.Mat4 {
+	x := [16]float32{
+		float32(m[0]),
+		float32(m[1]),
+		float32(m[2]),
+		float32(m[3]),
+		float32(m[4]),
+		float32(m[5]),
+		float32(m[6]),
+		float32(m[7]),
+		float32(m[8]),
+		float32(m[9]),
+		float32(m[10]),
+		float32(m[11]),
+		float32(m[12]),
+		float32(m[13]),
+		float32(m[14]),
+		float32(m[15]),
+	}
+	return x
 }
 
 func V32toV64(v [3]float32) [3]float64 {

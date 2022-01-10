@@ -17,11 +17,26 @@ float make_grid(vec2 pos){
 }
 
 
+float line_grid(vec2 uv){
+    float gridColorx,gridColory,gridColor;
+    float width =.05;
+    uv = fract(uv*2);
+    gridColorx = abs(uv.x-.5);    
+    gridColorx = 1-smoothstep(.5-width,.5+width,gridColorx);
+    gridColory = abs(uv.y-.5);    
+    gridColory = 1-smoothstep(.5-width,.5+width,gridColory); 
+    
+    gridColor = gridColorx+gridColory;
+
+    gridColor=smoothstep(1.8,1.85,gridColor);
+    return gridColor;
+}
+
 
 void main() {
     vec3 v = fragVert;
     vec2 uv = v.xz*GroundPlaneScale/2;
-    float mask = make_grid(uv);
+    float mask = line_grid(uv);
     vec3 col;
     col = vec3(1,1,1)*mask;
 

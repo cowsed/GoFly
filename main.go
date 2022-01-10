@@ -49,8 +49,6 @@ func loop() {
 	if frame == 1 {
 		log.Println("Making sim")
 		Simulation = NewSim()
-		//Simulation.physContext.Run
-		Simulation.physContext.ResetPhysics()
 		Paused = false
 	}
 	Simulation.Draw()
