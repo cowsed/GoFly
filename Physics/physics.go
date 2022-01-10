@@ -18,7 +18,7 @@ type PhysicsSim struct {
 
 func InitPhysicsContext() *PhysicsSim {
 	p := PhysicsSim{}
-	p.PhysicsFrames = 100
+	p.PhysicsFrames = 1000
 	p.Gravity = mgl64.Vec3{0, g, 0}
 
 	m := PhysicsObject{
@@ -77,6 +77,8 @@ func (ps *PhysicsSim) DoPhysics(paused bool) {
 		forces := ps.Gravity
 
 		ps.Model.IntegrateLinear(dt, forces)
+		lastOrientation := ps.Model.Orientation
+		lastAngularMomentum := ps.Model.AngularMomentum
 		ps.Model.IntegrateRotational(dt, mgl64.Vec3{})
 
 		collisions := ps.DetectCollisions()
@@ -84,54 +86,50 @@ func (ps *PhysicsSim) DoPhysics(paused bool) {
 			continue
 		}
 		//If multiple collisions are happening(flat plane on flat plane) collisions can just happen at their center
-		reaction := CollisionResponse{}
-		reaction.CollisionNormal = collisions[0].CollisionNormal
-		for _, r := range collisions {
-			reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Add(r.CollisionBodyPosition)
-		}
-
-		reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Mul(1.0 / float64(4))
+		//reaction := collisions[0]
+		//reaction.CollisionNormal = collisions[0].CollisionNormal
+		//for _, r := range collisions {
+		//	reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Add(r.CollisionBodyPosition)
+		//}
+		//
+		//reaction.CollisionBodyPosition = reaction.CollisionBodyPosition.Mul(1.0 / float64(4))
 		//Do the actual math
-		coeff_restitution := .7
+		coeff_restitution := .5
 
-		//Something off with the position of intersection
-		//try bouncing at origin vs try bouncing at x=1
+		reactionForce := mgl64.Vec3{}
+		reactionTorque := mgl64.Vec3{}
 
-		e := coeff_restitution
-		v := ps.Model.GetVelocityAtPoint(reaction.CollisionBodyPosition) //ps.Model.Momentum.Mul(1 / ps.Model.Mass)
-		n := reaction.CollisionNormal
-		r := reaction.CollisionBodyPosition //.Sub(ps.Model.Position)
-		inv_mass := 1 / ps.Model.Mass
-		inv_it := ps.Model.InertiaTensor.Inv()
+		for _, reaction := range collisions {
+			e := coeff_restitution
+			v := ps.Model.GetVelocityAtPoint(reaction.CollisionBodyPosition) //ps.Model.Momentum.Mul(1 / ps.Model.Mass)
+			n := reaction.CollisionNormal
+			r := reaction.CollisionBodyPosition //.Sub(ps.Model.Position)
+			inv_mass := 1 / ps.Model.Mass
+			inv_it := ps.Model.InertiaTensor.Inv()
 
-		numerator := (v.Mul(-(1 + e))).Dot(n)
-		denom := (inv_it.Mul3x1(r.Cross(n))).Cross(r).Dot(n) + inv_mass
+			numerator := (v.Mul(-(1 + e))).Dot(n)
+			denom := (inv_it.Mul3x1(r.Cross(n))).Cross(r).Dot(n) + inv_mass
 
-		j := numerator / denom
-		//reaction.CollisionNormal[1] = -1
-		//inv_it := ps.Model.InertiaTensor.Inv()
-		//inv_mass := 1 / ps.Model.Mass
-		//e := coeff_restitution
-		//n := reaction.CollisionNormal
-		//
-		//vAtPoint := ps.Model.GetVelocityAtPoint(reaction.CollisionBodyPosition)
-		//vn := reaction.CollisionBodyPosition.Dot(vAtPoint) //minF(0, reaction.CollisionBodyPosition.Dot(vAtPoint))
-		//r := reaction.CollisionBodyPosition.Sub(ps.Model.Position)
-		//
-		//k := inv_mass + r.Cross(n).Dot((inv_it.Mul3x1(r.Cross(n))))
-		//
-		//j := -(1 + e) * vn / k
-		//fmt.Println(j, vn, k)
+			impulse := numerator / denom
 
-		dP := n.Mul(j)
-		ps.Model.Momentum = ps.Model.Momentum.Add(dP)
-		ps.Model.Position = ps.Model.Position.Add(dP.Mul(dt / ps.Model.Mass))
+			dP := n.Mul(impulse)
+			F := dP.Mul(1 / dt)
+			reactionForce = reactionForce.Add(F)
 
-		//ps.Model.AngularMomentum = ps.Model.AngularMomentum.Add(r.Cross(n.Mul(j)))
+			//ps.Model.AngularMomentum = ps.Model.AngularMomentum.Add(r.Cross(n.Mul(j)))
 
-		ps.Model.IntegrateRotational(dt, r.Cross(n.Mul(j)).Mul(1/dt))
-
+			reactionTorque = reactionTorque.Add(r.Cross(n.Mul(impulse)).Mul(1 / dt))
+		}
+		//ps.Model.IntegrateLinear(dt, reactionForce)
+		ps.Model.Momentum = ps.Model.Momentum.Add(reactionForce.Mul(dt))
+		ps.Model.Position = ps.Model.Position.Add(reactionForce.Mul(dt).Mul(dt / ps.Model.Mass))
+		//ps.Model.IntegrateRotational(dt, reactionTorque)
+		//Do the smae thing as linearly, cant integrate because that adds last position to
+		ps.Model.AngularMomentum = lastAngularMomentum
+		ps.Model.Orientation = lastOrientation
+		ps.Model.IntegrateRotational(dt, reactionTorque)
 	}
+
 }
 func minF(a, b float64) float64 {
 	if a < b {
@@ -184,13 +182,6 @@ func (p *PhysicsObject) GetVelocityAtPoint(point mgl64.Vec3) mgl64.Vec3 {
 	vel := linearVel.Add(angularVelocity.Cross(point.Sub(p.Position)))
 	return vel
 }
-
-//void GetVelocityAtWorldPoint( const vec3f & point, vec3f & velocity ) const
-//{
-//	vec3f angularVelocity = transformVector( inverseInertiaTensorWorld, angularMomentum );
-//	velocity = linearVelocity + cross( angularVelocity, point - position );
-//}
-//
 
 func (p *PhysicsObject) IntegrateLinear(dt float64, forces mgl64.Vec3) {
 	//V_{n+1} = V_n + A*dt
