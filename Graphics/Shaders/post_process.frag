@@ -7,8 +7,8 @@ layout (location = 0) out vec4 frag_color;
 void main(){
     vec3 col = vec3(1,0,0);
     vec2 texCoords = UV/2 +.5;
-    col=texture(outputImage,texCoords).xyz;
-
+    col=vec3(texture(outputImage,texCoords).r);
+ 
     //Gamma correct
     float gamma = 1;//2.2;
     col = pow(col, vec3(1/gamma));

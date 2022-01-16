@@ -27,13 +27,9 @@ func Quat64toQuat32(q mgl64.Quat) mgl32.Quat {
 		V: V64toV32(q.V),
 	}
 }
-
-func (m *Model) DrawModel(projection, view mgl32.Mat4) {
-	position := V64toV32(m.physObj.Position)
-	orientation := Quat64toQuat32(m.physObj.Orientation)
-	//position = [3]float32{0, 0, 0}
-	m.model3d.DrawModel(projection, view, position, orientation)
-
+func (m *Model) ApplyPhysics() {
+	mat := m.physObj.Orientation.Mat4().Mul4(mgl64.Translate3D(m.physObj.Position[0], m.physObj.Position[1], m.physObj.Position[2]))
+	m.model3d.ModelMatrix = M64toM32(mat)
 }
 
 func M64toM32(m mgl64.Mat4) mgl32.Mat4 {

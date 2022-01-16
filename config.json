@@ -1,5 +1,6 @@
 {
     "CameraFOV": 90,
     "ModelPath": "Assets/Planes/cube.ac",
-    "EnvironmentPath": "Assets/Environments/skybox/"
+    "EnvironmentPath": "Assets/Environments/skybox/",
+    "SceneryPath": "Assets/Scenery/Scenery.ac"
 }

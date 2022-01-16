@@ -21,36 +21,28 @@ func MakeUI() {
 		g.Checkbox("Paused", &Paused),
 		g.Checkbox("Follow", &followModel),
 
-		g.InputFloat(&Simulation.gfxContext.Scene.Scale).Label("Scale"),
+		//g.InputFloat(&Simulation.gfxContext.Scene.Scale).Label("Scale"),
 		g.Labelf("sumDT: %v", Simulation.physContext.SumDT),
 		g.Custom(func() {
-			//mass32 := float32(Simulation.physContext.Model.Mass)
-			//if imgui.DragFloat("Mass", &mass32) {
-			//	Simulation.physContext.Model.Mass = float64(mass32)
-			//}
 
 			DragFloat3("Camera Position", (*[3]float32)(&Simulation.gfxContext.Cam.Position), 0.01, -1000, 1000, "%f")
 			DragFloat3("Lookat Position", (*[3]float32)(&Simulation.gfxContext.Cam.Lookat), 0.01, -1000, 1000, "%f")
 			DragFloat364("Object Position", (*[3]float64)(&Simulation.physContext.Model.Position), 0.01, -1000, 1000, "%f")
 			DragFloat364("Object Momentum", (*[3]float64)(&Simulation.physContext.Model.Momentum), 0.01, -1000, 1000, "%f")
-			//imgui.Text(fmt.Sprint(Simulation.physContext.Model.Position()))
 			imgui.Separator()
-			//DragFloat364("Applied Force", (*[3]float64)(&physics.AppliedForce), 0.01, -1000, 1000, "%f")
 
 			DragFloat364("Angular momentum", (*[3]float64)(&Simulation.physContext.Model.AngularMomentum), 0.01, -1000, 1000, "%f")
-			//DragFloat364("Applied Torque", (*[3]float64)(&physics.AppliedTorque), 0.01, -1000, 1000, "%f")
-
-			//DragFloat364("Rotational Velocity", (*[3]float64)(&Simulation.physContext.Model.RotationalVelocity), 0.01, -1000, 1000, "%f")
 			DragQuat64("Orientation", &Simulation.mod.physObj.Orientation, 0.01, -1, 1, true, "%f")
-			//imgui.Text(fmt.Sprint(Simulation.physContext.Model.Orientation))
 
 			if imgui.Button("reset physics") {
-				//Simulation.physContext.ResetPhysics()
+				Simulation.physContext.ResetPhysics()
 			}
 			imgui.DragFloatV("FOV", &Simulation.gfxContext.Cam.FOV, 0.1, .5, 179, "%f", 0)
 		}),
 	}
+
 	render := g.Custom(func() {
+
 		size := imgui.ContentRegionAvail()
 
 		if int32(size.X) != Simulation.gfxContext.RenderWidth || int32(size.Y) != Simulation.gfxContext.RenderHeight {
@@ -72,6 +64,14 @@ func MakeUI() {
 			imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1},
 			imgui.Vec4{X: 0, Y: 0, Z: 0, W: 0},
 		)
+		imgui.ImageV(imgui.TextureID(Simulation.gfxContext.PPTexture),
+			size,
+			imgui.Vec2{X: 0, Y: 1},
+			imgui.Vec2{X: 1, Y: 0},
+			imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1},
+			imgui.Vec4{X: 0, Y: 0, Z: 0, W: 0},
+		)
+
 	})
 	if !fullWindow {
 		g.SingleWindow().Layout(

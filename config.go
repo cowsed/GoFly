@@ -11,12 +11,14 @@ type Config struct {
 	CameraFOV       float32
 	ModelPath       string
 	EnvironmentPath string
+	SceneryPath     string
 }
 
 var DefaultConfig Config = Config{
 	CameraFOV:       90,
-	ModelPath:       "Assets/Models/Simple/final NP v17.obj",
-	EnvironmentPath: "",
+	ModelPath:       "Assets/Planes/cube.ac",
+	EnvironmentPath: "Assets/Environments/skybox/",
+	SceneryPath: "Assets/Scenery/Scenery.ac",
 }
 
 func LoadConfig() Config {

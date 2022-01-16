@@ -10,6 +10,8 @@ uniform mat4 viewMatrix;
 uniform mat4 projMatrix;
 uniform mat4 MVP;
 
+uniform mat4 lightSpaceMatrix;
+
 uniform mat4 partMatricies[20];
 
 
@@ -17,6 +19,8 @@ out vec2 fragTexCoord;
 out vec3 fragNormal;
 out vec3 fragVert;
 out vec3 fragWorldPos;
+out vec4 FragPosLightSpace;
+
 
 flat out uint fragMatIndex;
 void main() {
@@ -31,6 +35,8 @@ void main() {
     fragVert = ActualVert;
     
     fragWorldPos = (modelMatrix * vec4(ActualVert,1)).xyz;
-	
+	FragPosLightSpace = lightSpaceMatrix * vec4(fragWorldPos,1.0);
+
+
     gl_Position = MVP * vec4(ActualVert, 1);
 }

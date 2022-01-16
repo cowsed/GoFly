@@ -24,6 +24,8 @@ type Model struct {
 	program  uint32
 	vao, vbo uint32
 
+	ModelMatrix mgl32.Mat4
+
 	shaderMaterials []mgl32.Vec3
 	partMatrices    []mgl32.Mat4
 	numtris         int32
@@ -133,22 +135,22 @@ func (m *ACModel) ACModelToBuffers() ([]mgl32.Mat4, []mgl32.Vec3, uint32, uint32
 	return partMatrices, colors, vao, vbo, int32(len(points))
 }
 
-func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orientation mgl32.Quat) {
+func (m *Model) DrawModel(projection, view mgl32.Mat4, lightSpaceMatrix mgl32.Mat4, shadowMap uint32) {
 	gl.UseProgram(m.program)
 	modelMatrixName := "modelMatrix"
 	viewMatrixName := "viewMatrix"
 	projMatrixName := "projMatrix"
 	mvpMatrixName := "MVP"
 	partMatricesName := "partMatricies"
+	lightSpaceMatrixName := "lightSpaceMatrix"
+	//ShadowMapName := "ShadowMap"
 
 	// Set up model martix for shader
-	model := mgl32.Translate3D(position[0], position[1], position[2])
 
-	model = model.Mul4(orientation.Mat4())
 	//model = model.Mul4(mgl32.Scale3D(0.3048, 0.3048, 0.3048)) //maybe to convert to metersnot feet
 	// Set the modelUniform for the object
 	modelUniform := gl.GetUniformLocation(m.program, gl.Str(modelMatrixName+"\x00"))
-	gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
+	gl.UniformMatrix4fv(modelUniform, 1, false, &m.ModelMatrix[0])
 
 	// Set the viewUniform for the object
 	viewUniform := gl.GetUniformLocation(m.program, gl.Str(viewMatrixName+"\x00"))
@@ -159,7 +161,7 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
 
 	// Also pass the combined MVP uniform for convenience
-	MVP := projection.Mul4(view.Mul4(model))
+	MVP := projection.Mul4(view.Mul4(m.ModelMatrix))
 	MVPUniform := gl.GetUniformLocation(m.program, gl.Str(mvpMatrixName+"\x00"))
 	gl.UniformMatrix4fv(MVPUniform, 1, false, &MVP[0])
 
@@ -169,9 +171,14 @@ func (m *Model) DrawModel(projection, view mgl32.Mat4, position mgl32.Vec3, orie
 	partMsUniform := gl.GetUniformLocation(m.program, gl.Str(partMatricesName+"\x00"))
 	gl.UniformMatrix4fv(partMsUniform, int32(len(m.partMatrices)), false, &m.partMatrices[0][0])
 
+	lsUniform := gl.GetUniformLocation(m.program, gl.Str(lightSpaceMatrixName+"\x00"))
+	gl.UniformMatrix4fv(lsUniform, 1, false, &lightSpaceMatrix[0])
+
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.BindTexture(gl.TEXTURE_2D, shadowMap)
+
 	gl.Disable(gl.CULL_FACE)
 	gl.BindVertexArray(m.vao)
-	gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
 	gl.DrawArrays(gl.TRIANGLES, 0, m.numtris)
 	gl.Enable(gl.CULL_FACE)
 }
